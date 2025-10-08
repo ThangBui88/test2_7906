@@ -18,7 +18,6 @@ st.title("Ứng dụng Đánh Giá Phương Án Kinh Doanh (DCF) 📊")
 st.subheader("Trích xuất thông tin, Xây dựng Dòng tiền và Tính toán Chỉ số Hiệu quả")
 
 # --- Hàm gọi API Gemini để Trích xuất Dữ liệu (Yêu cầu 1) ---
-# BỎ @st.cache_data vì đối tượng uploaded_file không tương thích với cơ chế caching
 def extract_financial_data_with_ai(uploaded_file, api_key):
     """Sử dụng Gemini AI để đọc file và trích xuất các chỉ số tài chính quan trọng."""
     
@@ -32,13 +31,12 @@ def extract_financial_data_with_ai(uploaded_file, api_key):
     # 1. Chuẩn bị file và Client
     client = genai.Client(api_key=api_key)
     model_name = 'gemini-2.5-flash'
-    
-    # Upload file lên Gemini API
-    # Sử dụng uploaded_file trực tiếp vì nó là một đối tượng file-like
+    file_to_upload = None # Khởi tạo biến file_to_upload
+
     try:
+        # SỬA LỖI: Bỏ tham số mime_type khỏi client.files.upload
         file_to_upload = client.files.upload(
-            file=uploaded_file, 
-            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            file=uploaded_file
         ) 
         
         st.info(f"File **{uploaded_file.name}** đã được tải thành công lên Gemini để phân tích. ID: {file_to_upload.name}")
@@ -46,7 +44,7 @@ def extract_financial_data_with_ai(uploaded_file, api_key):
         # 2. Xây dựng Prompt
         prompt = f"""
         Bạn là một chuyên gia phân tích tài chính. Nhiệm vụ của bạn là đọc toàn bộ nội dung trong file Word đính kèm.
-        Sau đó, hãy trích xuất **chính xác** các thông tin tài chính sau của dự án, và trả về kết quả **CHỈ DƯỚNG DẠNG MỘT JSON OBJECT** (KHÔNG có bất kỳ văn bản giải thích hoặc markdown nào khác ngoài JSON):
+        Sau đó, hãy trích xuất **chính xác** các thông tin tài chính sau của dự án, và trả về kết quả **CHỈ DƯỚI DẠNG MỘT JSON OBJECT** (KHÔNG có bất kỳ văn bản giải thích hoặc markdown nào khác ngoài JSON):
         
         1. Vốn đầu tư ban đầu (Initial Investment - Cần là một số, nếu có nhiều phần hãy cộng tổng): 'vốn_đầu_tư'
         2. Dòng đời dự án (Project Life - Số năm): 'dòng_đời_dự_án'
@@ -89,7 +87,7 @@ def extract_financial_data_with_ai(uploaded_file, api_key):
 
     except APIError as e:
         # Dọn dẹp nếu file đã được upload nhưng xảy ra lỗi sau đó
-        if 'file_to_upload' in locals():
+        if file_to_upload is not None:
             client.files.delete(name=file_to_upload.name)
         if 'Unsupported file type' in str(e):
              st.error("Lỗi: Gemini API không hỗ trợ loại file này. Vui lòng đảm bảo file là định dạng **.docx**.")
@@ -100,6 +98,7 @@ def extract_financial_data_with_ai(uploaded_file, api_key):
         st.error(f"Lỗi phân tích JSON từ AI. Dữ liệu thô từ AI: {response.text}")
         return None, None
     except Exception as e:
+        # Lỗi cũ "got an unexpected keyword argument 'mime_type'" sẽ rơi vào đây
         st.error(f"Đã xảy ra lỗi không xác định trong quá trình trích xuất: {e}")
         return None, None
 
@@ -167,7 +166,6 @@ def calculate_cash_flow(data):
             fraction = -cumulative_cf[period - 1] / cash_flows[period]
             pp = period - 1 + fraction
         elif period == 0:
-             # Trường hợp hiếm: vốn đầu tư ban đầu đã âm
              pp = 0
         
     # 4. DPP (Discounted Payback Period - Thời gian hoàn vốn có chiết khấu)
@@ -260,7 +258,6 @@ if uploaded_file is not None and api_key:
         st.session_state.ai_analysis_result = None
         
         with st.spinner('Đang phân tích file Word bằng Gemini AI... (Quá trình này có thể mất vài giây)'):
-            # Hàm không cache, thực thi mỗi lần bấm nút
             data, raw_output = extract_financial_data_with_ai(uploaded_file, api_key)
             if data:
                 st.session_state.financial_data = data
@@ -286,7 +283,6 @@ if st.session_state.financial_data:
     with col2:
         st.metric("💸 Chi phí hoạt động", f"{data.get('chi_phí_hàng_năm', 0):,.0f} VND")
         st.metric("🛡️ Khấu hao hàng năm", f"{data.get('khấu_hao_hàng_năm', 0):,.0f} VND")
-        # Sử dụng try-except để tránh lỗi định dạng nếu wacc là nan/none
         try:
              st.metric("📉 WACC (Tỷ lệ chiết khấu)", f"{float(data.get('wacc', 0)):.2%}")
         except:
@@ -310,7 +306,6 @@ if st.session_state.financial_data:
         ## 3. Bảng Dòng tiền (Cash Flow)
         st.subheader("3. Bảng Dòng tiền của Dự án (Cash Flow) 💸")
         
-        # Định dạng hiển thị
         st.dataframe(df_cf_display.style.format('{:,.0f}'), use_container_width=True)
         
         st.divider()
